@@ -22,11 +22,7 @@
  * SOFTWARE.
  */
 
-@folder-color: #FFDC29;
-@favorite-star-color: #29B2FF; 
-
-@refresh-icon-disabled-color: #82A984;
-@refresh-icon-enabled-color: #5DF265; 
+@favorite-star-color: #29B2FF;
 
 .group {
 
@@ -92,70 +88,21 @@
         }
     }
 
-    .layer-tools {
+    .layer-tools, .catalog-legend {
         padding-left: (@checkbox-width + @checkbox-margin * 2);
     }
 
-
-    .tool, .favorite-icon, .refresh-icon {
-        .fa;
-        margin-right: 0.25em;
+    .metadata.icon,.favorite.icon,.refresh.icon {
         font-size: 110%;
-        cursor: pointer;
     }
 
-
-    .favorite-icon {
-        color: @favorite-star-color;
-
-        &:before {
-            content: @fa-var-star-o;
-        }
+    .favorite.icon {
+        margin-right: .25em;
     }
 
-    .refresh-icon {
-        display: none;
-
-        color: @refresh-icon-disabled-color;
-        margin-left: 0.25em;
-
-        &:before {
-            content: @fa-var-refresh;
-        }
-    }
-
-
-    .tool.upload {
-        &:before {
-            content: @fa-var-upload;
-        }
-    }
-
-    .tool.clear {
-        &:before {
-            content: @fa-var-trash;
-        }
-    }
-
-}
-
-.layer.favorite {
-    .favorite-icon {
-        &:before {
-            content: @fa-var-star;
-        }
-    }
-}
-
-.layer.refresh {
-    .refresh-icon {
-        color: @refresh-icon-enabled-color;
-    }
-}
-
-.layer.has-refresh {
-    .refresh-icon {
-        display: inline-block;
+    .metadata.icon, .refresh.icon {
+        margin-right: .25em;
+        margin-left: .25em;
     }
 }
 
@@ -176,13 +123,17 @@
             height: 20px;
         }
     }
+
+    a.metadata {
+        color: black;
+    }
 }
 
 .catalog.searchable {
     padding-top: 40px;
 }
 
-/*** 
+/***
  ***  Flat Catalog
  ***/
 

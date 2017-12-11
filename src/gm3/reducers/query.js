@@ -54,7 +54,7 @@ function queryProgress(queryId, state, progress) {
 
 /** Remove specific results from a query.
  *
- *  @param state The state 
+ *  @param state The state
  *  @param queryId A query ID
  *  @param filter An object describing matching feature properties.
  *
@@ -105,6 +105,7 @@ export default function queryReducer(state = default_query, action) {
             const query_id = uuid.v4();
             new_query[query_id] = Object.assign({}, action.query, {
                 progress: 'new',
+                filter: [],
                 results: {},
                 rendered: {}
             });
@@ -113,17 +114,29 @@ export default function queryReducer(state = default_query, action) {
 
             // when running in single query mode the current query should
             //  be the only one displayed.
+            let new_state = Object.assign({}, state);
             if(action.singleQuery) {
                 query_order = [query_id];
+                // remove the other queries
+                for(const q of state.order) {
+                    delete new_state[q];
+                }
             }
-            return Object.assign({}, state, {order: query_order}, new_query);
+            return Object.assign(new_state, {order: query_order}, new_query);
         case MAP.QUERY_RESULTS:
             // issued when a specific layer returns a result
             const query_detail = state[action.id];
 
             // results are stored as results.layer = [features,]
             const new_results = {};
-            new_results[action.layer] = action.features;
+            if(action.failed) {
+                new_results[action.layer] = {
+                    failed: true,
+                    failureMessage: action.messageText
+                };
+            } else {
+                new_results[action.layer] = action.features;
+            }
             for(let i = 0, ii = action.features.length; i < ii; i++) {
                 new_results[action.layer][i].query = action.id;
             }
@@ -141,11 +154,30 @@ export default function queryReducer(state = default_query, action) {
             const rendered_results = [{data: action.data, target: action.target}].concat(state[action.id].rendered);
             const rendered_query = {};
             rendered_query[action.id] = Object({}, state[action.id], {rendered: rendered_results});
-            return Object.assign({}, state, rendered_query); 
+            return Object.assign({}, state, rendered_query);
         case MAP.QUERY_RESULTS_REMOVE:
             return filterQueryResults(state, action.id, action.filter);
         case MAP.QUERY_REMOVE:
             return removeQuery(state, action.id);
+        case MAP.ADD_FILTER:
+            new_query[action.id] = Object.assign({}, state[action.id], {
+                filter: state[action.id].filter.concat([action.filter])
+            });
+            return Object.assign({}, state, new_query);
+        case MAP.REMOVE_FILTER:
+            const new_filter = [];
+            // rebuild the filter array based without the
+            //  filters for a given field.
+            for(const filter in state[action.id].filter) {
+                if(filter.length > 2 && filter[1] !== action.field) {
+                    new_filter.push(filter);
+                }
+            }
+
+            new_query[action.id] = Object.assign({}, state[action.id], {
+                filter: new_filter
+            });
+            return Object.assign({}, state, new_query);
         default:
             return state;
     }

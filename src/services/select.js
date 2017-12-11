@@ -34,8 +34,17 @@ function SelectService(Application, options) {
     /** Title to show at the top of the results. */
     this.resultsTitle = options.resultsTitle ? options.resultsTitle : 'Select Results';
 
+    /** Header template for rendering before features. */
+    this.headerTemplate = options.headerTemplate ? options.headerTemplate : '@select-header';
+
     /** Template to use for rendering returned features. */
     this.template = options.template ? options.template : '@select';
+
+    /** Toggle whether the grid should attempt rendering. */
+    this.showGrid = options.showGrid !== undefined ? options.showGrid : true;
+
+    /** Footer template for rendering before features. */
+    this.footerTemplate = options.footerTemplate ? options.footerTemplate : '@select-footer';
 
     /** Name will be set by the application when the service is registered. */
     this.name = '';
@@ -45,9 +54,12 @@ function SelectService(Application, options) {
 
     /** Limit the number of selection tools available */
     this.tools = {
-        'Point': true, 
-        'Polygon': true, 
-        'Line': true, 
+        'Point': true,
+        'MultiPoint': true,
+        'Polygon': true,
+        'LineString': true,
+        'Select': true,
+        'Modify': true,
         'default': 'Polygon',
         'buffer': true
     };
@@ -63,27 +75,53 @@ function SelectService(Application, options) {
     this.keepAlive = false;
 
     /** User input fields, select allows choosing a layer */
-    this.fields = [{
-        type: 'select',
+    this.fields = options.fields || [{
+        type: 'layers-list',
         name: 'layer',
         label: 'Query Layer',
-        default: options.queryLayers ? options.queryLayers[0].value : '',
-        options: options.queryLayers ? options.queryLayers : []
+        default: options.defaultLayer,
+        filter: {
+            // ensure that the layer is visible to prevent confusion.
+            requireVisible: true,
+            // but require it have a select template.
+            withTemplate: ['select', 'select-header']
+        }
     }];
+
+    /** Alow shapes to be buffered. */
+    this.bufferAvailable = true;
 
     /** This function is called everytime there is an select query.
      *
-     *  @param selection contains a GeoJSON feature describing the 
+     *  @param selection contains a GeoJSON feature describing the
      *                   geography to be used for the query.
      *
      *  @param fields    is an array containing any user-input
      *                   given to the service.
      */
     this.query = function(selection, fields) {
-        // get the query layer.
-        var query_layer = fields[0].value;
-        // dispatch the query against on the query layer!
-        Application.dispatchQuery(this.name, selection, [], [query_layer]);
+        if(typeof(selection) === 'undefined') {
+            // throw up this handy dialog.
+            var msg = 'A selection geometry is required for this query.';
+            var service_name = this.name;
+            var on_close = function() {
+                Application.startService(service_name);
+            };
+
+            Application.alert('selection-required', msg, on_close);
+        } else {
+            // get the query layer.
+            var query_layer = fields[0].value;
+            // check which templates should try and load
+            var templates = [this.template];
+            if(this.showGrid) {
+                templates.push('@gridColumns');
+                templates.push('@gridRow');
+            }
+
+            // dispatch the query against on the query layer!
+            Application.dispatchQuery(this.name, selection, [], [query_layer], templates);
+        }
     }
 
 
@@ -93,61 +131,29 @@ function SelectService(Application, options) {
     this.resultsAsHtml = function(queryId, query) {
         // initialize empty html content.
         var html = '';
+
+
         // iterate through each layer that was queried by the service.
         for(var i = 0, ii = query.layers.length; i < ii; i++) {
             // short-handing the item in the loop.
             var path = query.layers[i];
 
+            // add the header contents
+            html += Application.renderTemplate(path, this.headerTemplate, query);
+
             // check to see that the layer has results and features were returned.
-            if(query.results[path] && !query.results[path].failed) {
+            if(query.results[path]) {
                 html += Application.renderFeaturesWithTemplate(query, path, this.template);
             }
+
+            // and footer contents.
+            html += Application.renderTemplate(path, this.footerTemplate, query);
         }
+
 
         // return the html for rendering.
         return html;
     }
-
-
-    /** hasRendered is an object which tells renderQueryResults to ignore
-     *              queries which have already been rendered.
-     */
-    this.hasRendered = {};
-
-    /** renderQueryResults is the function called to let the service
-     *                     run basically any code it needs to execute after
-     *                     the query has been set to finish.  
-     *
-     *  WARNING! This will be called multiple times. It is best to ensure
-     *           there is some sort of flag to prevent multiple renderings.
-     */
-    this.renderQueryResults = function(queryId, query) {
-        // This is an ugly short circuit.
-        if(this.hasRendered[queryId]) {
-            // do nothing.
-            return;
-        }
-        // flag the query as rendered even though code below
-        //  this line has not finished, this prevents an accidental
-        //  double-rendering.
-        this.hasRendered[queryId] = true;
-
-        // render a set of features on a layer.
-        var all_features = [];
-        for(var i = 0, ii = query.layers.length; i < ii; i++) {
-            var path = query.layers[i];
-            if(query.results[path] && !query.results[path].failed) {
-                all_features = all_features.concat(query.results[path]);
-            }
-        }
-
-        // when features have been returned, clear out the old features
-        //  and put the new features on the highlight layer.
-        if(all_features.length > 0) {
-            Application.clearFeatures(this.highlightPath);
-            Application.addFeatures(this.highlightPath, all_features);
-        }
-    }
-
-
 }
+
+if(typeof(module) !== 'undefined') { module.exports = SelectService; }

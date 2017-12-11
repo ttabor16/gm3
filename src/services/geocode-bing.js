@@ -68,7 +68,7 @@ function BingGeocoder(Application, options) {
         var bing_url = 'http://dev.virtualearth.net/REST/v1/Locations';
         // boom kick this off.
         var highlight_path = this.highlightPath;
-        Application.xhr({
+        gm3.util.xhr({
             url: bing_url,
             type: 'jsonp',
             jsonp: 'jsonp',
@@ -125,3 +125,5 @@ function BingGeocoder(Application, options) {
         Application.dispatchQuery(this.name, selection, fields, []);
     };
 }
+
+if(typeof(module) !== 'undefined') { module.exports = BingGeocoder; }

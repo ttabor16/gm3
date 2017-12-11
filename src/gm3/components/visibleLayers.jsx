@@ -27,34 +27,58 @@ import React, {Component, PropTypes } from 'react';
 
 import { FavoriteLayers } from './favorites';
 
+import { isLayerOn, getZValue, getLayersByZOrder } from '../util';
 
+import { UpTool, DownTool } from './catalog/tools';
+
+import { setMapSourceZIndex } from '../actions/mapSource';
+
+/* VisibleLayers Tab.
+ *
+ * Displays layers in their map layer order.
+ *
+ */
 class VisibleLayers extends FavoriteLayers {
 
-    constructor() {
-        super();
-        this.nVisible = 0;
-    }
+    getToolsForLayer(layer) {
+        let tools = layer.tools.slice();
 
-    shouldRenderNode(node) {
-        let vis = (!node.children && node.on);
-        if(vis) {
-            this.nVisible += 1;
+        if(layer.tools.indexOf('down') < 0) {
+            tools = ['down'].concat(tools);
         }
-        return vis;
+        if(layer.tools.indexOf('up') < 0) {
+            tools = ['up'].concat(tools);
+        }
+
+        return this.getTools(layer, tools);
     }
 
     render() {
-        this.nVisible = 0;
+        // get the list of layers order'd by the stack order
+        const layers = getLayersByZOrder(this.props.catalog, this.props.mapSources);
 
-        let layers = Object.keys(this.props.catalog).map(this.renderTreeNode)
-
-        if(this.nVisible === 0) {
-            layers = (<i>No layers are visible</i>);
+        // convert the layer to something to render
+        const layer_objects = [];
+        for(let i = 0, ii = layers.length; i < ii; i++) {
+            const layer = layers[i];
+            layer_objects.push(this.renderLayer(layer.layer));
         }
-        
+
+        // put a message out if there are no layers.
+        let no_layers_error = '';
+        if(layers.length === 0) {
+            no_layers_error = (<i>No layers are visible</i>);
+        }
+
         return (
             <div className="catalog visble-layers flat">
-                { layers }
+                <div className="info-box">
+                This tab lists all of the visible layers. Checking a layer
+                from the Catalog will cause the layer to appear here. Unchecking a
+                layer's checkbox will cause it to disappear from this list.
+                </div>
+                { no_layers_error }
+                { layer_objects }
             </div>
         );
     }
@@ -63,6 +87,7 @@ class VisibleLayers extends FavoriteLayers {
 
 const mapFavoritesToProps = function(store) {
     return {
+        mapSources: store.mapSources,
         catalog: store.catalog
     }
 }

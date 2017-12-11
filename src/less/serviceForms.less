@@ -22,28 +22,29 @@
  * SOFTWARE.
  */
 
+.radio-option,.draw-tool {
+    cursor: pointer;
+    padding-left: 15px;
+
+    .radio-icon {
+        .fa;
+        &:before {
+            content: @fa-var-circle-o;
+        }
+    }
+
+}
+
+.radio-option.selected,.draw-tool.selected {
+    .radio-icon {
+        &:before {
+            content: @fa-var-check-circle-o;
+        }
+    }
+}
+
+
 .service-manager {
-
-    .draw-tool {
-        cursor: pointer;
-        padding-left: 15px;
-
-        .radio-icon {
-            .fa;
-            &:before {
-                content: @fa-var-circle-o;
-            }
-        }
-            
-    }
-
-    .draw-tool.selected {
-        .radio-icon {
-            &:before {
-                content: @fa-var-check-circle-o;
-            }
-        }
-    }
 
     .tab-controls {
         padding-top: 1em;
@@ -54,7 +55,7 @@
             background: none;
             cursor: pointer;
         }
-        
+
         .go-button {
             float: right;
         }
@@ -78,5 +79,43 @@
                 content: @fa-var-times-circle-o;
             }
         }
+    }
+
+    label {
+            font-weight: bold;
+    }
+
+    .service-input {
+        label {
+            display: block;
+            margin-top: 7px;
+        }
+    }
+
+    input[type='text'] {
+        width: 90%;
+    }
+
+    .service-input.select {
+        select {
+            width: 90%;
+        }
+    }
+
+    .query-error {
+        .error-header {
+            font-weight: bold;
+            padding: 2px;
+            background-color: red;
+        }
+
+        .error-contents {
+            padding: 4px;
+            border: solid 1px red;
+        }
+    }
+
+    .clear-controls {
+        text-align: center;
     }
 }

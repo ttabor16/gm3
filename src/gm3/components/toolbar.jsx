@@ -32,49 +32,77 @@ import { connect } from 'react-redux';
 import { startTool } from '../actions/toolbar';
 
 import { startService } from '../actions/service';
-import { runAction } from '../actions/ui';
+import { runAction, setUiHint } from '../actions/ui';
 
-class Toolbar extends Component {
+export class ToolbarButton extends Component {
 
-    constructor() {
-        super();
+    constructor(props) {
+        super(props);
         this.handleToolAction = this.handleToolAction.bind(this);
-        this.renderTool = this.renderTool.bind(this);
     }
 
-    handleToolAction(tool) {
-        console.log('handleToolAction', tool);
+    handleToolAction() {
+        const tool = this.props.tool;
         if(tool.actionType === 'service') {
-            console.log('dispatching startService...');
+            // start the service
             this.props.store.dispatch(startService(tool.name));
+            // give an indication that a new service has been started
+            this.props.store.dispatch(setUiHint('service-start'));
         } else if(tool.actionType === 'action') {
             this.props.store.dispatch(runAction(tool.name));
         }
     }
 
-    renderTool(tool) {
-        let tool_click = () => {
-            this.handleToolAction(tool);
-        };
-
+    render() {
+        const tool = this.props.tool;
         return (
-            <button onClick={tool_click} key={tool.name}>
+            <button onClick={this.handleToolAction} key={tool.name} className={"tool " + tool.name} title={tool.label}>
                 <span className="icon"></span><span className="label">{tool.label}</span>
             </button>
         );
     }
+}
+
+
+export class ToolbarDrawer extends Component {
+
+    render() {
+        const drawer = this.props.drawer;
+
+        return (
+            <div className="drawer tool">
+                <span className="drawer icon"></span><span className="label">{drawer.label}</span>
+                <div className="drawer-contents">
+                {
+                    this.props.toolbar[drawer.name].map((tool, i ) => {
+                        return (<ToolbarButton store={this.props.store} key={'btn' + i} tool={ tool } />);
+                    })
+                }
+                </div>
+            </div>
+        );
+    }
+}
+
+
+export class Toolbar extends Component {
 
     render() {
         return (
             <div className="toolbar">
                 {
-                    this.props.toolbar.map(this.renderTool)
+                    this.props.toolbar.root.map((tool, i ) => {
+                        if(tool.actionType === 'drawer') {
+                            return (<ToolbarDrawer store={this.props.store} drawer={ tool } toolbar={ this.props.toolbar } key={'drawer' + i} />);
+                        } else {
+                            return (<ToolbarButton store={this.props.store} key={'btn' + i} tool={ tool } />);
+                        }
+                    })
                 }
             </div>
         );
     }
-
-};
+}
 
 
 const mapToolbarToProps = function(store) {

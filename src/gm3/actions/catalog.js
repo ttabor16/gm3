@@ -42,7 +42,7 @@ function addElement(tree, parentId, child) {
         let element = tree[i];
         if(element.type === 'group') {
             if(element.id === parentId) {
-                
+
             }
         }
     }
@@ -85,28 +85,33 @@ function parseLayer(store, layerXml) {
     let new_layer = {
         id: layerXml.getAttribute('uuid'),
         label: layerXml.getAttribute('title'),
+        legend: util.parseBoolean(layerXml.getAttribute('show-legend'), true),
         src: [],
-        on: false,
         favorite: false,
         refreshEnabled: false,
         refresh: null,
+        metadata_url: null,
         tools: []
     };
 
     // This is the first attempt at a new model
     //  for parsing the tool availabiltiy from the XML,
-    //  somehwere this should be more configurable but 
+    //  somehwere this should be more configurable but
     //  for now it'll "work."
-    const tools = {
-        upload: false, 
-        clear: false,
-        fade: false, unfade: false,
-        up: false, down: false
-    };
+    const tools = [
+        'down', 'up',
+        'fade', 'unfade',
+        'zoomto',
+        'upload', 'download',
+        'legend-toggle',
+        'draw-point', 'draw-line', 'draw-polygon',
+        'draw-modify', 'draw-remove',
+        'clear'
+    ];
 
     // iterate through the available tools, if it's set in the XML
     //  then honour that setting, otherwise, use the default.
-    for(let tool_name in tools) {
+    for(const tool_name of tools) {
         if(util.parseBoolean(layerXml.getAttribute(tool_name), false)) {
             new_layer.tools.push(tool_name);
         } else if(tools[tool_name]) {
@@ -117,11 +122,9 @@ function parseLayer(store, layerXml) {
     // parse a refresh time if it exists
     if(layerXml.getAttribute('refresh')) {
         new_layer.refresh = parseFloat(layerXml.getAttribute('refresh'));
-        new_layer.refreshEnabled = true;
     }
 
     // collect the src states
-    let src_state = true;
     let src_favorite = false;
 
     // parse out the souces
@@ -144,9 +147,7 @@ function parseLayer(store, layerXml) {
             new_layer.src.push(s);
 
             // if any of the underlaying paths in the src
-            //  are false, then turn all of them off. 
-            src_state = src_state && mapSources.getVisibility(store, s);
-
+            //  are false, then turn all of them off.
             src_favorite = src_favorite || mapSources.isFavoriteLayer(store, s);
 
             // check to see if a 'default' name is needed
@@ -161,8 +162,13 @@ function parseLayer(store, layerXml) {
         }
     }
 
+    // check to see if the layer has any metadata
+    const metadata = util.getTagContents(layerXml, 'metadata', true)[0];
+    if(metadata) {
+        new_layer.metadata_url = metadata;
+    }
+
     // set the new layer state based on the src.
-    new_layer.on = src_state;
     new_layer.favorite = src_favorite;
 
     let p = layerXml.parentNode;
@@ -206,7 +212,7 @@ function subtreeActions(store, parent, subtreeXml) {
 }
 
 
-/** Read in the XML and returns a list of 
+/** Read in the XML and returns a list of
  *  actions to populate the store.
  *
  */
@@ -221,4 +227,14 @@ export function parseCatalog(store, catalogXml) {
     }
 
     return subtreeActions(store, null, catalogXml);
+}
+
+/* Change the visibility of a legend.
+ */
+export function setLegendVisibility(layerId, on) {
+    return {
+        type: CATALOG.LEGEND_VIS,
+        id: layerId,
+        on
+    };
 }

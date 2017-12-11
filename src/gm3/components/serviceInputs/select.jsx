@@ -33,14 +33,26 @@ export default class SelectInput extends TextInput {
         return (<option key={opt.value} value={opt.value}>{opt.label}</option>);
     }
 
+    getOptions() {
+        return this.props.field.options;
+    }
+
+    componentWillMount() {
+        const options = this.getOptions();
+        if(typeof this.props.field.default === 'undefined') {
+            this.onChange({target: {value: options[0].value}});
+        }
+    }
+
     render() {
         const id = this.getId();
+        const options = this.getOptions();
 
         return (
-            <div className='service-input'>
+            <div className='service-input select'>
                 <label htmlFor={ 'input-' + id }>{ this.props.field.label }</label>
                 <select id={ 'input-' + id} value={this.state.value} onChange={this.onChange}>
-                { this.props.field.options.map(this.renderOption) }
+                { options.map(this.renderOption) }
                 </select>
             </div>
         );

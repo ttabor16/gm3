@@ -34,15 +34,32 @@ module.exports = {
     devtool: 'source-map',
     entry: [
         'babel-polyfill',
-        './src/' 
+        './src/'
     ],
 
     module: {
         loaders: [{
             test: /\.(jsx|js)$/,
             loaders: ['babel'],
-            include: path.join(__dirname, 'src'),
-            exclude: /node_modules/,
+            include: [
+                path.join(__dirname, 'src'),
+                path.join(__dirname, 'node_modules/'),
+            ],
+            exclude: function(absPath) {
+                var acceptable = ['ol', 'mapbox-to-ol-style', '@mapbox', 'jsts'];
+                if(absPath.indexOf('node_modules') < 0) {
+                    return false;
+                }
+
+                for(var i = 0, ii = acceptable.length; i < ii; i++) {
+                    if(absPath.indexOf(acceptable[i]) >= 0) {
+                        return false;
+                    }
+                }
+            },
+        }, {
+            test: /\.json$/,
+            loader: 'json-loader',
         }]
     },
     resolve: {

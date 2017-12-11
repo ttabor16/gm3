@@ -23,7 +23,7 @@
  */
 
 /** The big bopper of all the GeoMoose Components, the Catalog.
- * 
+ *
  *  This is the most exercised component of GeoMoose and serves
  *  as the 'dispatch' center to the map, presenting the layers
  *  of the mapbook in a nice tree format.
@@ -34,15 +34,33 @@ import ReactDOM from 'react-dom';
 
 import { connect } from 'react-redux';
 
-import { CATALOG, MAPSOURCE } from '../actionTypes';
-import * as mapSourceActions from '../actions/mapSource'; 
+import { isLayerOn } from '../util';
 
-import { UploadTool, ClearTool } from './catalog/tools';
+import { CATALOG, MAPSOURCE } from '../actionTypes';
+import * as mapSourceActions from '../actions/mapSource';
+
+import { UpTool, DownTool, ClearTool, DrawTool, ZoomToTool, LegendToggle } from './catalog/tools';
+import { FadeTool, UnfadeTool } from './catalog/tools';
+import { UploadTool } from './catalog/tools/upload';
+import { DownloadTool } from './catalog/tools/download';
+
+import Legend from './catalog/legend';
 
 const mapCatalogToProps = function(store) {
     return {
         mapSources: store.mapSources,
         catalog: store.catalog
+    }
+}
+
+class MetadataTool extends Component {
+    render() {
+        return (
+            <a className="metadata" href={ this.props.href } target="_blank"
+                title="View metadata - opens new window">
+                <i className="icon metadata"></i>
+            </a>
+        );
     }
 }
 
@@ -58,7 +76,6 @@ export class Catalog extends Component {
         this.renderGroup = this.renderGroup.bind(this);
         this.renderTreeNode = this.renderTreeNode.bind(this);
 
-        this.toggleLayer = this.toggleLayer.bind(this);
         this.toggleFavoriteLayer = this.toggleFavoriteLayer.bind(this);
 
         this.filterCatalog = this.filterCatalog.bind(this);
@@ -69,23 +86,9 @@ export class Catalog extends Component {
         this.searchable = true;
     }
 
-    /** Change the layer's visibility state
-     *
-     *  @param layer Catalog layer definition.
-     *
-     */
-    toggleLayer(layer) {
-        // change the actual layer value.
-        this.props.store.dispatch({
-            type: CATALOG.LAYER_VIS,
-            id: layer.id,
-            on: !layer.on
-        });
-    }
-
-    /** Toggle whether a layer is considered a "favorite" 
+    /** Toggle whether a layer is considered a "favorite"
      *  or not.
-     * 
+     *
      *  @param {Layer} layer Catalog layer definition
      *
      */
@@ -120,16 +123,16 @@ export class Catalog extends Component {
     /** Render the 'map sources' of a layer.
      *
      *  @param layer Catalog layer definition.
-     *  
+     *
      */
-    renderMapSources(layer) {
+    renderMapSources(layer, on) {
         // "render" the src
         for(let src of layer.src) {
             this.props.store.dispatch({
                 type: MAPSOURCE.LAYER_VIS,
                 layerName: src.layerName,
                 mapSourceName: src.mapSourceName,
-                on: !layer.on
+                on
             })
         }
     }
@@ -159,24 +162,56 @@ export class Catalog extends Component {
         });
 
 
-        // with each layer, turn of the 
+        // with each layer, turn of the
         for(let src of layer.src) {
             this.props.store.dispatch(mapSourceActions.setRefresh(src.mapSourceName, refresh_seconds));
         }
     }
 
 
-    /** Parcel out the rendering of the tools.
+    /* Convert the tool definitions to components.
      */
-    getTools(layer) {
+    getTools(layer, enabledTools) {
         let tools = [];
-        for(let tool_name of layer.tools) {
+        for(let tool_name of enabledTools) {
+            let key = layer.id + '_' + tool_name;
+
             switch(tool_name) {
+                case 'up':
+                    tools.push(<UpTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+                case 'down':
+                    tools.push(<DownTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+                case 'fade':
+                    tools.push(<FadeTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+                case 'unfade':
+                    tools.push(<UnfadeTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+                case 'zoomto':
+                    tools.push(<ZoomToTool store={this.props.store} key={key} layer={layer} />);
+                    break;
                 case 'upload':
-                    tools.push(<UploadTool store={this.props.store} key={layer.id + '_upload'} layer={layer} />);
+                    tools.push(<UploadTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+                case 'download':
+                    tools.push(<DownloadTool store={this.props.store} key={key} layer={layer} />);
                     break;
                 case 'clear':
-                    tools.push(<ClearTool store={this.props.store} key={layer.id + '_clear'} layer={layer} />);
+                    tools.push(<ClearTool store={this.props.store} key={key} layer={layer} />);
+                    break;
+
+                case 'draw-point':
+                case 'draw-polygon':
+                case 'draw-line':
+                case 'draw-modify':
+                case 'draw-remove':
+                    const draw_type = tool_name.split('-')[1];
+                    tools.push(<DrawTool store={this.props.store} drawType={draw_type} key={key} layer={layer} />);
+                    break;
+                case 'legend-toggle':
+                    tools.push(<LegendToggle store={this.props.store} layer={layer} key={key} />);
                     break;
                 default:
                     // pass
@@ -185,11 +220,14 @@ export class Catalog extends Component {
         return tools;
     }
 
+    getToolsForLayer(layer) {
+        return this.getTools(layer, layer.tools);
+    }
 
     renderLayer(layer) {
         let toggle = () => {
-            this.toggleLayer(layer);
-            this.renderMapSources(layer);
+            const map_sources = this.props.store.getState().mapSources;
+            this.renderMapSources(layer, !isLayerOn(map_sources, layer));
         };
 
         let toggleFavorite = () => {
@@ -200,20 +238,18 @@ export class Catalog extends Component {
             this.toggleRefreshLayer(layer);
         }
 
-        // this prevents a React warning about the 
+        // this prevents a React warning about the
         //  checkboxes not having an onChange event.
         let doNothing = () => {};
 
         let layer_classes = ['layer'];
 
-        if(this.isFavoriteLayer(layer)) {
-            layer_classes.push('favorite');
+        let is_favorite = 'favorite icon';
+        if(!this.isFavoriteLayer(layer)) {
+            is_favorite += ' not';
         }
         if(layer.on) {
             layer_classes.push('on');
-        }
-        if(layer.refreshEnabled) {
-            layer_classes.push('refresh');
         }
 
         // TODO: Check layer for minscale/maxscale against
@@ -226,24 +262,41 @@ export class Catalog extends Component {
         //  with the ability to do auto-refresh.
         let refresh_tool = '';
         if(layer.refresh !== null && layer.refresh > 0) {
-            refresh_tool = (<i className="refresh-icon" onClick={toggleRefresh}/>);
+            const refresh_on = layer.refreshEnabled ? 'on' : '';
+            refresh_tool = (<i className={'refresh icon ' + refresh_on} onClick={toggleRefresh}/>);
         }
 
-        let tools = this.getTools(layer);
+        let tools = this.getToolsForLayer(layer);
+
+        let legend = false;
+        if(layer.legend) {
+            legend = ( <Legend store={this.props.store} layer={layer}/> );
+        }
+
+        let metadata_tool = false;
+        if(layer.metadata_url) {
+            metadata_tool = <MetadataTool href={layer.metadata_url} />
+        }
+        // check to see if the layer is on or not.
+        const is_on = isLayerOn(this.props.mapSources, layer);
 
         return (
             <div key={layer.id} className={layer_classes.join(' ')}>
-                <div className="layer-label"> 
-                    <input className="checkbox" type="checkbox" onChange={doNothing} onClick={toggle} checked={layer.on} />
-                    <i className="favorite-icon" onClick={toggleFavorite}/> 
+                <div className="layer-label">
+                    <input className="checkbox" type="checkbox"
+                       onChange={doNothing} onClick={toggle} checked={is_on} />
+
+                    <i className={ is_favorite } onClick={toggleFavorite}/>
                     <span onClick={toggle}>
                         {layer.label}
                     </span>
                     {refresh_tool}
+                    {metadata_tool}
                 </div>
                 <div className="layer-tools">
                     {tools}
                 </div>
+                { legend }
             </div>
         );
     }
@@ -251,8 +304,10 @@ export class Catalog extends Component {
 
     renderGroup(group) {
         let classes = 'group';
+        let is_open = '';
         if(group.expand) {
             classes += ' expand';
+            is_open = 'open';
         } else {
             classes += ' collapse';
         }
@@ -263,7 +318,7 @@ export class Catalog extends Component {
 
         return (
             <div key={group.id} className={classes}>
-                <div onClick={toggle} className="group-label"><i className="group-icon"></i>{group.label}</div>
+                <div onClick={toggle} className="group-label"><i className={'folder icon ' + is_open}></i>{group.label}</div>
                 <div className="children">
                 {group.children.map(this.renderTreeNode)}
                 </div>
@@ -299,7 +354,7 @@ export class Catalog extends Component {
         let search_term = evt.target.value;
         this.setState({searchFilter: search_term.toLowerCase()});
     }
-    
+
     render() {
         let searchbox = '';
         let catalog_classes = 'catalog'
@@ -308,7 +363,7 @@ export class Catalog extends Component {
         if(this.searchable) {
             searchbox = (<div className='searchbox'>
                 <input onChange={this.filterCatalog} placeholder='Search catalog'/>
-            </div>); 
+            </div>);
 
             catalog_classes += ' searchable';
         }

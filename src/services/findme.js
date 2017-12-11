@@ -31,7 +31,7 @@
 function FindMeAction(Application, options) {
 
     // allow the targetting of a layer, but default to the highlight layer
-    this.targetLayer = options.targetLayer ? options.targetLayer : 'highlight/highlight';
+    this.targetLayer = options.targetLayer ? options.targetLayer : 'results/results';
 
     // default the map projection to web-mercator
     this.mapProjection = options.mapProjection ? options.mapProjection : 'EPSG:3857';
@@ -42,7 +42,7 @@ function FindMeAction(Application, options) {
 
     /** This function is called everytime there is an identify query.
      *
-     *  @param selection contains a GeoJSON feature describing the 
+     *  @param selection contains a GeoJSON feature describing the
      *                   geography to be used for the query.
      *
      *  @param fields    is an array containing any user-input
@@ -59,28 +59,34 @@ function FindMeAction(Application, options) {
     this.gotoPosition = function(loc) {
         var lat = loc.coords.latitude;
         var lon = loc.coords.longitude;
-        console.info('lat', lat, 'lon', lon, this.targetLayer, this);
+        var coord = [lon, lat];
 
-        // convert the feature to map coordinates
-        var coord = ol.proj.transform([lon, lat], 'EPSG:4326', this.mapProjection);
+        // turn the coordinate into a fake feature
+        var fake_feature = {
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [lon, lat]
+            },
+            properties: {
+                label: 'Location'
+            }
+        };
 
-        console.info(coord);
+        // put the feature in map projection.
+        var map_feature = gm3.util.projectFeatures([fake_feature], 'EPSG:4326', this.mapProjection)[0];
 
-
-        // clear the target layer
         Application.clearFeatures(this.targetLayer);
 
         // mark the location in the highlight layer
-        Application.addFeatures(this.targetLayer, [
-            {
-                type: 'Point',
-                coordinates: [lon, lat],
-                properties: {}
-            }
-        ]);
+        Application.addFeatures(this.targetLayer, map_feature);
 
         var b = this.buffer;
-        var x = coord[0], y = coord[1];
-        Application.zoomToExtent([x - b, y - b, x + b, y + b]);
+        var x = map_feature.geometry.coordinates[0],
+            y = map_feature.geometry.coordinates[1];
+
+        Application.zoomToExtent([x - b, y - b, x + b, y + b], this.mapProjection);
     }
 }
+
+if(typeof(module) !== 'undefined') { module.exports = FindMeAction; }

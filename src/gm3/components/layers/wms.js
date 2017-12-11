@@ -23,10 +23,12 @@
  */
 
 /** Collection of functions for defining a WMS layers in a GeoMoose map.
- * 
+ *
  */
 
 import * as util from '../../util';
+import Image from 'ol/layer/image';
+import ImageWMS from 'ol/source/imagewms';
 
 /** Create the parameters for a WMS layer.
  *
@@ -43,8 +45,11 @@ function defineSource(mapSource) {
     return {
         url: mapSource.urls[0],
         // This is a carry over from previous generations behaviour.
-        ratio: 1.0, 
-        params: Object.assign({'LAYERS': layers.join(',')}, mapSource.params),
+        ratio: 1.0,
+        params: Object.assign({
+            'VERSION': '1.1.1',
+            'LAYERS': layers.join(',')
+        }, mapSource.params),
         serverType: mapSource.serverType
     }
 }
@@ -57,8 +62,8 @@ function defineSource(mapSource) {
  *  @returns OpenLayers Layer instance.
  */
 export function createLayer(mapSource) {
-    return new ol.layer.Image({
-        source: new ol.source.ImageWMS(defineSource(mapSource))
+    return new Image({
+        source: new ImageWMS(defineSource(mapSource))
     });
 }
 
@@ -80,4 +85,37 @@ export function updateLayer(map, layer, mapSource) {
         src.setUrl(defn.url);
     }
 }
-    
+
+/** Get a URL for the map-source.
+ *
+ *  @param {gm3.MapSource} mapSource the Map Source.
+ *  @param {Object}        mapView   the current view of the map from the state.
+ *  @param {String}        layerName the name of the layer for the legend.
+ *
+ *  @returns {Object} Defining the legend.
+ */
+export function getLegend(mapSource, mapView, layerName) {
+    // pull out the first url for making the legend.
+    const base_url = mapSource.urls[0].split('?')[0];
+
+    const params = Object.assign({
+        'REQUEST': 'GetLegendGraphic',
+        // 'SCALE': TODO: get a scale hint from the map.
+        'SERVICE': 'WMS',
+        // TODO: Does this need to be passed in? Check by server-type?
+        'VERSION': '1.1.1',
+        'WIDTH': '250',
+        'LAYER': layerName,
+        'FORMAT': 'image/png',
+    }, mapSource.params);
+
+    const images = [];
+
+    images.push(base_url + '?' + util.formatUrlParameters(params));
+    // 'img' type legends just return a list
+    // of images that can be included with a <img src=image[x]>
+    return {
+        type: 'img',
+        images
+    }
+}

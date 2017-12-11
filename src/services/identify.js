@@ -60,7 +60,7 @@ function IdentifyService(Application, options) {
 
     /** This function is called everytime there is an identify query.
      *
-     *  @param selection contains a GeoJSON feature describing the 
+     *  @param selection contains a GeoJSON feature describing the
      *                   geography to be used for the query.
      *
      *  @param fields    is an array containing any user-input
@@ -68,7 +68,7 @@ function IdentifyService(Application, options) {
      */
     this.query = function(selection, fields) {
         // get the list of visible layers
-        var visible_layers = Application.getQueryableLayers();
+        var visible_layers = Application.getQueryableLayers({withTemplate: 'identify'});
 
         // This will dispatch the query.
         // Application.dispatchQuery is used to query a set of map-sources
@@ -76,7 +76,7 @@ function IdentifyService(Application, options) {
         //  it would be necessary to put that code here and then manually tell
         //  the application when the query has finished, at which point resultsAsHtml()
         //  would be called by the service tab.
-        Application.dispatchQuery(this.name, selection, fields, visible_layers);
+        Application.dispatchQuery(this.name, selection, fields, visible_layers, this.template);
     }
 
 
@@ -92,10 +92,10 @@ function IdentifyService(Application, options) {
             var path = query.layers[i];
 
             // check to see that the layer has results and features were returned.
-            if(query.results[path] && !query.results[path].failed) {
+            if(query.results[path]) {
                 // renderFeaturesWithTemplate will take the query, the layer specified by path,
                 //  and the specified template and render it. This example uses an inline
-                //  template from the mapbook. 
+                //  template from the mapbook.
                 // The layer in the mapbook should have a <template name='identify'>
                 //  child which will be rendered here..
                 html += Application.renderFeaturesWithTemplate(query, path, this.template);
@@ -106,3 +106,5 @@ function IdentifyService(Application, options) {
         return html;
     }
 }
+
+if(typeof(module) !== 'undefined') { module.exports = IdentifyService; }

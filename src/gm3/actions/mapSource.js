@@ -26,14 +26,20 @@
  *
  */
 
-import { MAPSOURCE } from '../actionTypes'; 
+import { MAPSOURCE } from '../actionTypes';
 
 import * as util from '../util';
+
+var MS_Z_INDEX = 100000;
 
 /** Add a map-source using a MapSource
  *  object.
  */
 export function add(mapSource) {
+    if(typeof(mapSource.zIndex) !== 'number') {
+        mapSource.zIndex = MS_Z_INDEX;
+        MS_Z_INDEX--;
+    }
     return {
         type: MAPSOURCE.ADD,
         mapSource
@@ -76,7 +82,7 @@ function parseParams(msXml) {
  *  @returns The action object.
  */
 export function favoriteLayer(mapSourceName, layerName, favorite) {
-    return { 
+    return {
         type: MAPSOURCE.LAYER_FAVORITE,
         mapSourceName, layerName,
         favorite
@@ -106,7 +112,7 @@ function mapServerToDestType(msXml, conf, destType) {
         urls: urls,
         params: {
             'MAP': conf.mapfile_root + mapfile
-        }, 
+        },
     };
 
     return map_source;
@@ -146,8 +152,6 @@ function mapServerToWFS(msXml, conf) {
     return wfs_conf;
 }
 
-var MS_Z_INDEX = 100000;
-
 /** Add a map-source from XML
  *
  */
@@ -158,22 +162,27 @@ export function addFromXml(xml, config) {
         urls: util.getTagContents(xml, 'url', true),
         type: xml.getAttribute('type'),
         label: xml.getAttribute('title'),
+        opacity: xml.getAttribute('opacity'),
         zIndex: xml.getAttribute('z-index'),
         queryable: util.parseBoolean(xml.getAttribute('queryable'), true),
+        // assume layers are printable
+        printable: util.parseBoolean(xml.getAttribute('printable'), true),
         refresh: null,
-        style: null,
         layers: [],
+        transforms: {},
         params: {}
     }
 
     // handle setting up the zIndex
     if(map_source.zIndex) {
         map_source.zIndex = parseInt(map_source.zIndex);
-    } else {
-        map_source.zIndex = MS_Z_INDEX;
-        MS_Z_INDEX--;
     }
 
+    // try to get an opacity,  if it won't parse then default to 1.0
+    map_source.opacity = parseFloat(map_source.opacity);
+    if(isNaN(map_source.opacity)) {
+        map_source.opacity = 1.0;
+    }
 
     // allow server-type hinting for hidpi displays.
     let server_type = xml.getAttribute('server-type');
@@ -200,18 +209,13 @@ export function addFromXml(xml, config) {
         }
     }
 
-    // check to see if there are any style definitions
-    let style = util.getTagContents(xml, 'style', false);
-    if(style && style.length > 0) {
-        // convert to JSON
-        try {
-            map_source.style = JSON.parse(style);
-        } catch(err) {
-            console.error('There was an error parsing the style for: ', map_source.name);
-            console.error('Error details', err);
-        }
+    // catalog the transforms for the layer
+    const transforms = xml.getElementsByTagName('transform');
+    for(let x = 0, xx = transforms.length; x < xx; x++) {
+        const transform = transforms[x];
+        map_source.transforms[transform.getAttribute('attribute')] =
+        transform.getAttribute('function');
     }
-
 
     // mix in the params
     Object.assign(map_source.params, parseParams(xml));
@@ -227,9 +231,24 @@ export function addFromXml(xml, config) {
             name: layerXml.getAttribute('name'),
             on: util.parseBoolean(layerXml.getAttribute('status')),
             favorite: util.parseBoolean(layerXml.getAttribute('favorite')),
+            selectable: util.parseBoolean(layerXml.getAttribute('selectable')),
             label: layer_title ? layer_title : map_source.label,
-            templates: {}
+            templates: {},
+            legend: null,
+            style: null,
+            filter: null,
+            queryAs: layerXml.getAttribute('query-as'),
         };
+
+        // user defined legend.
+        // two types currently supported: "html" and "img"
+        let legends = layerXml.getElementsByTagName('legend');
+        if(legends.length > 0) {
+            layer.legend = {
+                type: legends[0].getAttribute('type'),
+                contents: util.getXmlTextContents(legends[0])
+            };
+        }
 
         let templates = layerXml.getElementsByTagName('template');
         for(let x = 0, xx = templates.length; x < xx; x++) {
@@ -238,20 +257,63 @@ export function addFromXml(xml, config) {
             let template_xml = templates[x];
             let template_name = template_xml.getAttribute('name');
 
+            let template_src = template_xml.getAttribute('src');
             let template_alias = template_xml.getAttribute('alias');
+            let auto_template = util.parseBoolean(template_xml.getAttribute('auto'));
             if(template_alias) {
                 template_def = {
                     type: 'alias',
                     alias: template_alias
                 };
+            } else if(template_src) {
+                template_def = {
+                    type: 'remote',
+                    src: template_src
+                };
+            } else if(auto_template) {
+                template_def = {
+                    type: 'auto'
+                };
             } else {
                 template_def = {
                     type: 'local',
                     contents: util.getXmlTextContents(template_xml)
-                }
+                };
             }
 
             layer.templates[template_name] = template_def;
+
+
+        }
+
+        // check to see if there are any style definitions
+        let style = util.getTagContents(layerXml, 'style', false);
+        if(style && style.length > 0) {
+            // convert to JSON
+            try {
+                layer.style = JSON.parse(style);
+            } catch(err) {
+                console.error('There was an error parsing the style for: ', map_source.name);
+                console.error('Error details', err);
+            }
+        }
+
+        // check to see if there are any filter definitions
+        let filter = util.getTagContents(layerXml, 'filter', false);
+        if(filter && filter.length > 0) {
+            // convert to JSON
+            try {
+                layer.filter = JSON.parse(filter);
+            } catch(err) {
+                console.error('There was an error parsing the filter for: ', map_source.name);
+                console.error('Error details', err);
+            }
+        }
+
+        // queryAs can be defined as multiple paths,
+        //  and is normalized to an array using split.
+        if(layer.queryAs) {
+            layer.queryAs = layer.queryAs.split(':');
         }
 
         map_layers.push(addLayer(map_source.name, layer));
@@ -302,7 +364,22 @@ export function getLayer(store, layer) {
     throw {message: "Cannot find layer", layer};
 }
 
-/** This query is common enough that it's been reduced to 
+/** Get a layer using the internal path format "source"/"layer"
+ *
+ *  @param store The master store.
+ *  @param path  String defining the path.
+ *
+ * @return The layer from the map-source in the store.
+ */
+export function getLayerByPath(store, path) {
+    const p = path.split('/');
+    return getLayer(store, {
+        mapSourceName: p[0],
+        layerName: p[1]
+    });
+}
+
+/** This query is common enough that it's been reduced to
  *  a handy function.
  *
  */
@@ -323,7 +400,7 @@ export function isFavoriteLayer(store, layer) {
 }
 
 /** Check whether a map-source is 'active',
- *  'active' is defined as having any layers 
+ *  'active' is defined as having any layers
  *  with status='on' or being a vector type map-source
  *  with the status='on'.
  *
@@ -344,15 +421,18 @@ function isMapSourceActive(mapSource) {
     return false;
 }
 
-/** Get the list of all map-sources which have a 
+/** Get the list of all map-sources which have a
  *  layer that is on.
  */
-export function getActiveMapSources(store) {
+export function getActiveMapSources(store, onlyPrintable = false) {
     let map_sources = store.getState().mapSources;
     let active = [];
+    const all_maps = !onlyPrintable;
     for(let ms in map_sources) {
         if(isMapSourceActive(map_sources[ms])) {
-            active.push(ms);
+            if(all_maps || map_sources[ms].printable) {
+                active.push(ms);
+            }
         }
     }
     return active;
@@ -377,44 +457,142 @@ function isQueryable(mapSource) {
     switch(mapSource.type) {
         case 'wms':
         case 'wfs':
+        case 'ags-vector':
+        case 'geojson':
+        case 'vector':
             return true;
         default:
             return false;
     }
 }
 
-/** Get the list of visible layers.
- *
- *  @param store {Store} the application's store.
- *  @param onlyQueryLayers {Boolean} When true, only return queryable layers.
- *
- *  @return List of layers.
+/** check if a layer is on.
  */
-export function getVisibleLayers(store, onlyQueryLayers) {
+function isVisible(mapSource, layer) {
+    return (layer.on === true);
+}
+
+/** Check if a layer is selectable
+ */
+function isSelectable(mapSource, layer) {
+    switch(mapSource.type) {
+        case 'wfs':
+        case 'vector':
+        case 'ags-vector':
+            return (layer.selectable === true);
+        default:
+            return false
+    }
+    return false;
+}
+
+/* Match layers based on a matching function.
+ *
+ * @param store The application's store.
+ * @param matchFunction The function that matches against the mapsource and layer.
+ *
+ * @return List of layers (as paths).
+ */
+export function matchLayers(store, matchFunction) {
     let map_sources = store.getState().mapSources;
-    let active = [];
+    let matches = [];
     for(let ms in map_sources) {
-        if(isMapSourceActive(map_sources[ms])) {
-            if(!onlyQueryLayers || isQueryable(map_sources[ms])) {
-                for(let layer of map_sources[ms].layers) {
-                    if(layer.on) {
-                        active.push(ms + '/' + layer.name);
-                    }
-                }
+        for(let layer of map_sources[ms].layers) {
+            if(matchFunction(map_sources[ms], layer)) {
+                matches.push(ms + '/' + layer.name);
             }
         }
     }
-    return active;
+    return matches;
+
 }
 
+/** Get the list of visible layers.
+ *
+ *  @param store {Store} the application's store.
+ *
+ *  @return List of layers.
+ */
+export function getVisibleLayers(store) {
+    return matchLayers(store, isVisible);
+}
+
+function getLayerFromSources(mapSources, msName, layerName) {
+    if(mapSources[msName]) {
+        const ms = mapSources[msName];
+        for(let i = 0, ii = ms.layers.length; i < ii; i++) {
+            if(ms.layers[i].name === layerName) {
+                return ms.layers[i];
+            }
+        }
+    }
+
+    return null;
+}
 
 /** Return the list of layers that can be queried.
- * 
+ *
  *  These layers are a subset of visible layers.
  *
  */
-export function getQueryableLayers(store) {
-    return getVisibleLayers(store, true);
+export function getQueryableLayers(store, filter = {}, options = {}) {
+    // when visible is set to true, then any visibility will
+    //  be false and the isVisible call will be evaluated.
+    const req_visible = (typeof filter.requireVisible === 'undefined') ? true : filter.requireVisible;
+    const match_fn = function(ms, layer, queryLayer) {
+        let template_filter_pass = true;
+        if(filter && filter.withTemplate) {
+            let template_names = filter.withTemplate;
+            // coerce the templates into an array
+            if(typeof template_names === 'string') {
+                template_names = [template_names, ];
+            }
+
+            template_filter_pass = false;
+            const templates = queryLayer.templates;
+            for (let x = 0, xx = template_names.length; x < xx && !template_filter_pass; x++) {
+                const tpl_name = template_names[x];
+                template_filter_pass = (templates && typeof templates[tpl_name] !== 'undefined');
+            }
+        }
+        return (template_filter_pass && isQueryable(ms, queryLayer) && (!req_visible || isVisible(ms, layer)));
+    }
+
+    const map_sources = store.getState().mapSources;
+    const query_layers = [];
+    for(const ms_name in map_sources) {
+        const ms = map_sources[ms_name];
+        for(let i = 0, ii = ms.layers.length; i < ii; i++) {
+            const layer = ms.layers[i];
+            let query_layer_found = false;
+
+            // queryAs allows raster sources to reference vector sources
+            //  for query operations.
+            if(layer.queryAs) {
+                for(var q = 0, qq = layer.queryAs.length; q < qq; q++) {
+                    const qs = layer.queryAs[q].split('/');
+                    const query_layer = getLayerFromSources(map_sources, qs[0], qs[1]);
+                    if(match_fn(ms, layer, query_layer)) {
+                        query_layers.push(layer.queryAs[q]);
+                        query_layer_found = true;
+                    }
+                }
+            }
+
+            if(!query_layer_found && match_fn(ms, layer, layer)) {
+                query_layers.push(ms_name + '/' + layer.name);
+            }
+        }
+    }
+
+    return query_layers;
+}
+
+export function getSelectableLayers(store) {
+    const match_fn = function(ms, layer) {
+        return (isSelectable(ms, layer) && isVisible(ms, layer));
+    }
+    return matchLayers(store, match_fn);
 }
 
 
@@ -430,31 +608,111 @@ export function setRefresh(mapSourceName, refreshSeconds) {
     }
 }
 
-export function addFeatures(mapSourceName, layerName, features) {
+export function addFeatures(mapSourceName, features) {
     return {
         type: MAPSOURCE.ADD_FEATURES,
-        mapSourceName, layerName, features
+        mapSourceName, features
     };
 }
 
-export function clearFeatures(mapSourceName, layerName) {
+export function clearFeatures(mapSourceName) {
     return {
         type: MAPSOURCE.CLEAR_FEATURES,
-        mapSourceName, layerName
+        mapSourceName
     };
 }
 
 
-export function removeFeatures(mapSourceName, layerName, filter) {
+export function removeFeatures(mapSourceName, filter) {
     return {
         type: MAPSOURCE.REMOVE_FEATURES,
-        mapSourceName, layerName, filter
+        mapSourceName, filter
     };
 }
 
-export function changeFeatures(mapSourceName, layerName, filter, properties) {
+/* Remove a specific feature from the layer.
+ */
+export function removeFeature(mapSourceName, id) {
+    return {
+        type: MAPSOURCE.REMOVE_FEATURE,
+        mapSourceName, id
+    };
+}
+
+/* Modify a feature's geomtery
+ */
+export function modifyFeatureGeometry(mapSourceName, id, geometry) {
+    return {
+        type: MAPSOURCE.MODIFY_GEOMETRY,
+        mapSourceName, id, geometry
+    };
+}
+
+export function changeFeatures(mapSourceName, filter, properties) {
     return {
         type: MAPSOURCE.CHANGE_FEATURES,
-        mapSourceName, layerName, filter, properties
+        mapSourceName, filter, properties
+    };
+}
+
+/* Get the active map-sources sorted by zIndex.
+ *
+ */
+export function getOrderedMapSources(mapSources) {
+    let active = [];
+    for(let ms in mapSources) {
+        if(isMapSourceActive(map_sources[ms])) {
+            active.push(ms);
+        }
+    }
+
+    // sort the active sources by their zIndex.
+    return active.sort(function(a, b) {
+        return (a.zIndex < b.zIndex) ? -1 : 1;
+    });
+}
+
+/* Get an action for setting the zIndex of a Map Source
+ *
+ * @param mapSourceName The name of the map-source
+ * @param zIndex        The new zindex.
+ *
+ * @return action.
+ */
+export function setMapSourceZIndex(mapSourceName, zIndex) {
+    return {
+        type: MAPSOURCE.SET_Z,
+        mapSourceName,
+        zIndex
+    };
+}
+
+/* Get an action for setting the opacity of a Map Source
+ *
+ * @param mapSourceName The name of the map-source
+ * @param opacity       The new opacity (float between 0 and 1)
+ *
+ * @return action.
+ */
+export function setOpacity(mapSourceName, opacity) {
+    return {
+        type: MAPSOURCE.SET_OPACITY,
+        mapSourceName,
+        opacity
+    };
+}
+
+/** Definition for a change of template action.
+ *
+ * @param mapSourceName The name of the map-source
+ * @param layerName     The name of the layer
+ * @param name          The template name.
+ * @param template      A new template definition
+ */
+export function setLayerTemplate(mapSourceName, layerName, name, template) {
+    return {
+        type: MAPSOURCE.SET_TEMPLATE,
+        mapSourceName, layerName,
+        name, template
     };
 }

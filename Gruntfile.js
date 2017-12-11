@@ -33,6 +33,8 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-contrib-less');
     grunt.loadNpmTasks('grunt-contrib-watch');
     grunt.loadNpmTasks('grunt-webpack');
+    // load our custom tasks
+    grunt.loadTasks('./src/tasks');
 
     grunt.initConfig({
         // linting task. Used to ensure code is clean
@@ -42,6 +44,15 @@ module.exports = function(grunt) {
                 configFile: 'eslint.config.js',
             },
             target: ['src/**/*.jsx', 'src/**/*.js']
+        },
+
+        // line the CSS
+        lintless: {
+            all: {
+                files: [
+                    {src: ['src/less/**/*.less']}
+                ]
+            }
         },
 
         // copies useful files places.
@@ -59,14 +70,11 @@ module.exports = function(grunt) {
                         expand: true, flatten: true,
                         src: ['node_modules/font-awesome/fonts/*'],
                         dest: 'dist/fonts/'
-                    }
-                ]
-            },
-            ol: {
-                files: [
+                    },
                     {
-                        src: ['node_modules/openlayers/dist/ol.js'],
-                        dest: 'dist/ol.js'
+                        expand: true, flatten: true,
+                        src: ['node_modules/mapskin/fonts/*'],
+                        dest: 'dist/fonts/'
                     }
                 ]
             },
@@ -99,6 +107,14 @@ module.exports = function(grunt) {
                 options: {
                     spawn: false,
                 }
+            },
+            less: {
+                files: ['src/less/**/*'],
+                tasks: ['less:build']
+            },
+            services: {
+                files: ['src/services/*'],
+                tasks: ['copy:services']
             }
         },
 
@@ -109,23 +125,28 @@ module.exports = function(grunt) {
 
         'webpack-dev-server': {
             options: {
-                webpack: webpackConfig,
-                publicPath: "./"
+                webpack: webpackConfig
             },
-            start: Object.assign({}, webpackConfig.devServer)
+            start: Object.assign({keepAlive: true}, webpackConfig.devServer)
         }
     });
 
-    grunt.task.registerTask('lint', ['eslint']);
+    grunt.task.registerTask('lint', ['lintless', 'eslint']);
 
-    grunt.task.registerTask('serve', ['webpack-dev-server:start', 'watch:gm3']);
-
-    // only build the non-minified version.
-    grunt.task.registerTask('build-dev', ['eslint', 'copy:services', 'webpack:build-dev']);
+    grunt.task.registerTask('serve', ['webpack-dev-server:start']);
 
     // update the css and fonts.
     grunt.task.registerTask('build-css', ['less:build', 'copy:fonts']);
 
+    // only build the non-minified version.
+    grunt.task.registerTask('build-dev', ['lint', 'copy:services', 'webpack:build-dev']);
+
+    // only build the minified version.
+    grunt.task.registerTask('build-deploy', ['lint', 'build-css', 'copy:services', 'webpack:build-deploy']);
+
     // build everything
-    grunt.task.registerTask('build', ['eslint', 'webpack:build-dev', 'webpack:build-deploy', 'build-css', 'copy:ol', 'copy:services']);
+    // grunt.task.registerTask('build', ['build-dev', 'build-deploy']);
+    // You'd think the above would be OK as you'd think grunt had a dependency solver, but no,
+    // it runs duplicate tasks so, sigh, solve it manually.
+    grunt.task.registerTask('build', ['lint', 'build-css', 'copy:services', 'webpack:build-dev', 'webpack:build-deploy']);
 };

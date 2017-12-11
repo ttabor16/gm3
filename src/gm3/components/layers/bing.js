@@ -23,16 +23,18 @@
  */
 
 /** Collection of functions for defining a Bing layers in a GeoMoose map.
- * 
+ *
  */
+
+import TileLayer from 'ol/layer/tile';
+import BingSource from 'ol/source/bingmaps';
 
 /** Create the parameters for a Bing Services layer.
  *
  */
 function defineSource(mapSource) {
-    // there are two different layers in Bing maps,
-    //  roads and aerials.  This applies the logic to map
-    //  them.
+    //  If both roads and aerials are specified,
+    //  "AerialWithLabels" is requested.
     let aerials_on = false, roads_on = false;
     for(let layer of mapSource.layers) {
         if(layer.on === true) {
@@ -49,6 +51,14 @@ function defineSource(mapSource) {
         image_style = 'AerialWithLabels';
     } else if(aerials_on) {
         image_style = 'Aerial';
+    } else if(roads_on) {
+        image_style = 'Road';
+    } else {
+        for(let layer of mapSource.layers) {
+            if(layer.on === true) {
+                image_style = layer.name;
+            }
+        }
     }
 
     return {
@@ -64,8 +74,8 @@ function defineSource(mapSource) {
  *  @returns OpenLayers Layer instance.
  */
 export function createLayer(mapSource) {
-    return new ol.layer.Tile({
-        source: new ol.source.BingMaps(defineSource(mapSource))
+    return new TileLayer({
+        source: new BingSource(defineSource(mapSource))
     });
 }
 
@@ -78,6 +88,6 @@ export function updateLayer(map, layer, mapSource) {
     let defn = defineSource(mapSource);
 
     if(defn.imagerySet !== src.getImagerySet()) {
-        layer.setSource(new ol.source.BingMaps(defn));
+        layer.setSource(new BingSource(defn));
     }
 }

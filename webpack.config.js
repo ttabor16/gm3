@@ -25,7 +25,7 @@
  */
 var path = require('path');
 var webpack = require('webpack');
-    
+
 var package = require('./package.json');
 
 var fs = require('fs');
@@ -44,8 +44,26 @@ module.exports = {
         loaders: [{
             test: /\.(jsx|js)$/,
             loaders: ['babel'],
-            include: path.join(__dirname, 'src'),
-            exclude: /node_modules/,
+            include: [
+                path.join(__dirname, 'src'),
+                path.join(__dirname, 'node_modules/'),
+            ],
+            exclude: function(absPath) {
+                var acceptable = ['ol', 'mapbox-to-ol-style', '@mapbox', 'jsts'];
+                if(absPath.indexOf('node_modules') < 0) {
+                    return false;
+                }
+
+                for(var i = 0, ii = acceptable.length; i < ii; i++) {
+                    if(absPath.indexOf(acceptable[i]) >= 0) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }, {
+            test: /\.json$/,
+            loader: 'json-loader',
         }]
     },
     resolve: {
@@ -59,17 +77,27 @@ module.exports = {
         libraryTarget: 'umd'
     },
     devServer: {
+        publicPath: '/examples/geomoose/dist',
         contentBase: './',
         port: 4000,
-        proxy: {
-            '/mapserver' : {
+        proxy: [
+            {
+                context: ['/mapserver'],
                 target: 'http://localhost:8000/',
                 secure: false
-            }
-        }
+            },
+            {
+                // point the example "geomoose" directories back
+                //  at the geomoose repository.
+                context: ['/examples/geomoose/'],
+                target: 'http://localhost:4000/',
+                pathRewrite: {'^/examples/geomoose' : '' },
+                secure: false
+            },
+        ]
     },
     externals: {
-        openlayers: 'ol',
+        //openlayers: 'ol',
     },
     plugins: [
         new webpack.BannerPlugin(license_text, {raw: true}),

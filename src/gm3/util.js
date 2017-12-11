@@ -22,6 +22,12 @@
  * SOFTWARE.
  */
 
+import Request from 'reqwest';
+
+import GeoJSONFormat from 'ol/format/geojson';
+
+import createFilter from '@mapbox/mapbox-gl-style-spec/feature_filter';
+
 /** Collection of handy functions
  */
 
@@ -49,9 +55,9 @@ export function getXmlTextContents(node) {
         return node.text;
     } else if(node.textContent) {
         return node.textContent;
-    } 
+    }
 
-    return null; 
+    return null;
 }
 
 
@@ -66,7 +72,7 @@ export function getXmlTextContents(node) {
  *  @param xml      An XML fragment.
  *  @param tagName  The tagname to return.
  *  @param multiple Whether to return an array or the first element.
- * 
+ *
  *  @returns Value of the text in the tag, or null if not found.
  */
 export function getTagContents(xml, tagName, multiple) {
@@ -84,12 +90,12 @@ export function getTagContents(xml, tagName, multiple) {
             return node_value;
         }
     }
-    
+
     return contents;
 }
 
 /** Compare two objects
- * 
+ *
  *  @param objA The first object
  *  @param objB The second object
  *  @param deep Whether to go "deeper" into the object.
@@ -131,14 +137,14 @@ export function objectsDiffer(objA, objB, deep) {
     }
 
     // The above loop ensures that all the keys
-    //  in "A" match a key in "B", if "B" has any 
+    //  in "A" match a key in "B", if "B" has any
     //  extra keys then the objects differ.
     for(const key of b_keys) {
         if(a_keys.indexOf(key) < 0) {
             return true;
         }
     }
-        
+
     return false;
 }
 
@@ -151,6 +157,7 @@ export function objectsDiffer(objA, objB, deep) {
  *  @returns a string with the map-source's name.
  */
 export function getMapSourceName(path) {
+    if(path === null) { return ''; }
     return path.split('/')[0];
 }
 
@@ -161,6 +168,7 @@ export function getMapSourceName(path) {
  * @returns a layer name
  */
 export function getLayerName(path) {
+    if(path === null) { return ''; }
     const c = path.split('/');
     c.shift();
     // layers can have "/" in the name, so they need
@@ -198,6 +206,42 @@ export const FORMAT_OPTIONS = {
     }
 }
 
+
+/* Check to see if a value is in a list.
+ *
+ * @param value The value to test.
+ * @param list  The list with acceptable values.
+ *
+ * @return Boolean.
+ */
+function inList(value, list) {
+    return (list.indexOf(value) >= 0);
+}
+
+/* Check to see if a value is in a range from min to max.
+ *
+ * @param value The value to test.
+ * @param min   The minimum value (or null if no minimum)
+ * @param max   The maximum value (or null if no maximum)
+ *
+ * @return Boolean.
+ */
+function inRange(value, min = null, max = null) {
+    if(min !== null && max !== null) {
+        return (min < value && value < max);
+    }
+    if(min === null) {
+        return (value < max);
+    }
+    if(max === null) {
+        return (min < value);
+    }
+
+    // if everything is null, then the value is
+    //  considered in range.
+    return true;
+}
+
 /** Check to see if a feature matches the given filter.
  *
  *  @param {Array} features The list of features
@@ -208,8 +252,33 @@ export const FORMAT_OPTIONS = {
 export function featureMatch(feature, filter) {
     let match_all = (filter.match === 'any') ? false : true;
     for(let filter_key in filter) {
-        // check to see if the values match
-        let v = filter[filter_key] === feature.properties[filter_key];
+        const filter_def = filter[filter_key];
+        const prop_val = feature.properties[filter_key];
+        let v = false;
+        switch(filter_def.type) {
+            // range filters can have a min, max, or both.
+            case 'range':
+                v = inRange(prop_val, filter_def.min, filter_def.max);
+                break;
+            case 'list':
+                v = inList(prop_val, filter_def.value);
+                break;
+            // simple equals match
+            case 'equals':
+                v = (filter_def.value === prop_val);
+                break;
+            // no ".type" was set, assume the filter
+            // is defined as an "equals" match, e.g. {'PIN' : '123456'}
+            default:
+                // if filter_def is an array, or specified
+                //  as a "list type" then do the list match.
+                if(Array.isArray(filter_def)) {
+                    v = inList(prop_val, filter_def);
+                } else {
+                    // check to see if the values match
+                    v = (filter_def === prop_val);
+                }
+        }
         // if they match, and this is an 'any' search then short-circuit
         //  and return true;
         if(v && !match_all) { return true; }
@@ -218,7 +287,7 @@ export function featureMatch(feature, filter) {
         if(!v && match_all) { return false; }
     }
 
-    // no false values could have been set 
+    // no false values could have been set
     //  and reach this point with match_all
     if(match_all) {
         return true;
@@ -233,14 +302,21 @@ export function featureMatch(feature, filter) {
  *
  *  @param {Array} features The list of features
  *  @param {Object} filter key-value pairs of filter for the features.
+ *  @param {Boolean} inverse Optional. Defaults to true.
+ *                           When true, filter out matching features.
+ *                           When false,return matching features.
  *
  * @returns New list of features.
  */
-export function filterFeatures(features, filter) {
+export function filterFeatures(features, filter, inverse = true) {
     let new_features = [];
 
+    // the createFilter function is from mapbox!
+    // uses the mapbox gl style filters.
+    const filter_function = createFilter(['all'].concat(filter));
+
     for(let feature of features) {
-        if(!featureMatch(feature, filter)) {
+        if(inverse !== filter_function(feature)) {
             new_features.push(feature);
         }
     }
@@ -248,21 +324,47 @@ export function filterFeatures(features, filter) {
     return new_features;
 }
 
+/* Match the feature specified by the filter.
+ *
+ * This is really a wrapper around filterFeatures and is presented
+ * for code-clarity.
+ *
+ * @param {Array}  features The list of features.
+ * @param {Object} filter   Filter objects. key-value-pairs or {field: '', type: '', value/min/max}
+ *
+ * @returns New list of features.
+ */
+export function matchFeatures(features, filter) {
+    // when no filter is applied, just return the features.
+    if(filter === null || filter === false) {
+        return features;
+    }
+
+    return filterFeatures(features, filter, false);
+}
+
 /** Update feature properties.
  *
  *  @param {Array} features The list of features
  *  @param {Object} filter key-value pairs of filter for the features.
  *  @param {Object} properties The new values for the features.
+ *  @param {Object} geometry  An Object definition of the geometry
  *
  * @returns New list of features.
  */
-export function changeFeatures(features, filter, properties) {
+export function changeFeatures(features, filter, properties, geometry) {
     let new_features = [];
 
     for(let feature of features) {
         if(featureMatch(feature, filter)) {
-            let new_props = Object.assign({}, feature.properties, properties);
-            new_features.push(Object.assign({}, feature, {properties: new_props}));
+            const new_feature = Object.assign({}, feature);
+            if(properties) {
+                new_feature.properties = Object.assign({}, feature.properties, properties);
+            }
+            if(geometry) {
+                new_feature.geometry = Object.assign({}, geometry);
+            }
+            new_features.push(new_feature);
         } else {
             new_features.push(feature);
         }
@@ -278,4 +380,340 @@ export function changeFeatures(features, filter, properties) {
 export function getVersion() {
     let v = GM_VERSION;
     return v;
+}
+
+/** Determine the extent of the features in a source.
+ *  WARNING! This only works with vector sources.
+ *
+ * @param {MapSource} mapSource
+ *
+ * @returns Array containing [minx,miny,maxx,maxy]
+ */
+export function getFeaturesExtent(mapSource) {
+    let bounds = [null, null, null, null];
+
+    let min = function(x, y) {
+        if(x === null || y < x) { return y; }
+        return x;
+    };
+
+    let max = function(x, y) {
+        if(x === null || y > x) { return y; }
+        return x;
+    };
+
+    let update_bounds = function(x, y) {
+        bounds[0] = min(bounds[0], x);
+        bounds[1] = min(bounds[1], y);
+        bounds[2] = max(bounds[2], x);
+        bounds[3] = max(bounds[3], y);
+    };
+
+    if(mapSource.features) {
+        for(let feature of mapSource.features) {
+            let geom = feature.geometry;
+            if(geom.type === 'Point') {
+                update_bounds(geom.coordinates[0], geom.coordinates[1]);
+            } else if(geom.type === 'LineString') {
+                for(let pt of geom.coordinates) {
+                    update_bounds(pt[0], pt[1]);
+                }
+            } else if(geom.type === 'Polygon' || geom.type === 'MultiLineString') {
+                for(let ring of geom.coordinates) {
+                    for(let pt of ring) {
+                        update_bounds(pt[0], pt[1]);
+                    }
+                }
+            }
+        }
+    }
+
+    return bounds;
+}
+
+/* Configure a set of projections useful for GeoMoose.
+ *
+ * At this point this will just configure the UTM zones
+ * as they are used to do accurate measurement and buffers.
+ *
+ * @param {Proj4} p4 The Proj4 Library.
+ *
+ */
+export function configureProjections(p4) {
+    // var utm_zone = GeoMOOSE.getUtmZone(bounds.left);
+    // var north = bounds.top > 0 ? 'north' : 'south';
+
+    for(let utm_zone = 1; utm_zone <= 60; utm_zone++) {
+        for(let north of ['north', 'south']) {
+            // southern utm zones are 327XX, northern 326XX
+            const epsg_code = 32600 + utm_zone + (north === 'north' ? 0 : 100);
+
+            const proj_id = 'EPSG:' + epsg_code;
+            const proj_alias = 'UTM' + utm_zone + (north === 'north' ? 'N' : 'S');
+            // it's nice to have a formulary.
+            const proj_string = '+proj=utm +zone=' + utm_zone + ' +' + north + '+datum=WGS84 +units=m +no_defs';
+
+            // set up the standard way of calling the projection
+            //  (using the EPSG Code)
+            p4.defs(proj_id, proj_string);
+            // add an alias, so it can be referred by 'UTM15N' for example.
+            p4.defs(proj_alias, p4.defs(proj_id));
+        }
+    }
+
+}
+
+/**
+ * addProjDef
+ * Add a projection definition
+ *
+ * @param {object} p4 - the proj4js library
+ * @param {string} code - an ID used to refer to the defined projection
+ * @param {string} def - a proj4/wkt string used to define a projection
+ */
+export function addProjDef(p4, code, def) {
+    p4.defs(code, def);
+}
+
+/* Determine the UTM zone for a point
+ *
+ * @param {Point-like} An array containing [x,y] in WGS84 or NAD83 DD
+ *
+ * @return UTM string (e.g. UTM15N)
+ */
+export function getUtmZone(pt) {
+    let utm_string = 'UTM';
+
+    // No citation provideded for this calculation,
+    // it was working in the GM2.X series without a lot
+    // of complaints.
+    const zone = Math.floor((pt[0] / 6.0) + 30) + 1;
+
+    // north zones are north of 0.
+    const north = (pt[1] > 0) ? 'N' : 'S';
+
+    // boom, string ot the user.
+    return 'UTM' + zone + north;
+}
+
+const GEOJSON_FORMAT = new GeoJSONFormat();
+
+export function geomToJson(geom) {
+    return GEOJSON_FORMAT.writeGeometryObject(geom);
+}
+
+export function jsonToGeom(geom) {
+    return GEOJSON_FORMAT.readGeometry(geom);
+}
+
+const EQUIVALENT_METERS = {
+    'ft': 0.3048,
+    'yd': 0.9144,
+    'mi': 1609.347,
+    'in': 0.0254,
+    'm': 1,
+    'km': 1000,
+    "ch": 20.11684,
+    "a": 63.63,
+    "h": 100
+};
+
+/** Converts numeric lengths between given units
+ *
+ * @param {number} length - Length
+ * @param {string} srcUnits - Source unit
+ * @param {string} destUnits - Destination unit
+ * @return {number} Converted length
+ */
+export function convertLength(length, srcUnits, destUnits) {
+    // US survey feet, miles
+    return length * EQUIVALENT_METERS[srcUnits] / EQUIVALENT_METERS[destUnits];
+}
+
+/** Converts numeric areas between given units
+ *
+ * @param {number} area - Area
+ * @param {string} srcUnits - Source unit
+ * @param {string} destUnits - Destination unit
+ * @return {number} Converted area
+ */
+export function convertArea(area, srcUnits, destUnits) {
+    // US survey feet, miles
+    return area * Math.pow(EQUIVALENT_METERS[srcUnits], 2) / Math.pow(EQUIVALENT_METERS[destUnits], 2);
+}
+
+/* Convert  Meters to a given units.
+ *
+ */
+export function metersLengthToUnits(meters, units) {
+    return convertLength(meters, 'm', units);
+}
+
+/* Convert Square Meters to a given units.
+ *
+ */
+export function metersAreaToUnits(meters, units) {
+    return convertArea(meters, 'm', units);
+}
+
+/* Check to see if a layer should be checked or not.
+ *
+ * @param mapSources The mapsources section of the state tree.
+ * @param layer      The catalog layer definition.
+ *
+ */
+export function isLayerOn(mapSources, layer) {
+    // during "bootstrap" mapSources can be undefined,
+    //  this catches that scenario.
+    if(!mapSources) { return false };
+
+    // assume the layer is on
+    let is_on = true;
+    // iterate through each src,
+    //  if any are off, mark the checkbox as "off".
+    for(const src of layer.src) {
+        if(mapSources[src.mapSourceName]) {
+            const map_source = mapSources[src.mapSourceName];
+            for(const layer of map_source.layers) {
+                if(layer.name === src.layerName) {
+                    is_on = (is_on && layer.on);
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+    return is_on;
+}
+
+/* Given the map sources and a catalog layer definition
+ * get the zIndex.
+ *
+ * @param mapSources The mapSources from the state.
+ * @param layer      The layer definition from the catalog.
+ *
+ * @return The Z Index.
+ */
+export function getZValue(mapSources, layer) {
+    // only care about the first src
+    const src = layer.src[0];
+    return mapSources[src.mapSourceName].zIndex;
+}
+
+/* Sort the list of visible catalog layers by their zIndex.
+ *
+ * @param catalog The catalog from the state.
+ * @param mapSources The mapSources section of the state.
+ *
+ * @return An array of objects with two keys zIndex and layer.
+ *         zIndex is an integer, layer is the catalog definition
+ *         of a layer.
+ */
+export function getLayersByZOrder(catalog, mapSources) {
+    let layers = [];
+    for(const key of Object.keys(catalog)) {
+        const node = catalog[key];
+        // no children, should be a layer
+        if(node && typeof(node.children) === 'undefined') {
+            if(isLayerOn(mapSources, node)) {
+                layers.push({
+                    zIndex: getZValue(mapSources, node),
+                    layer: node
+                });
+            }
+        }
+    }
+
+    // sort the catalog layers by zIndex
+    layers.sort(function(a, b) {
+        return (a.zIndex > b.zIndex) ? -1 : 1;
+    });
+
+    return layers;
+}
+
+/** Bridge to a useful AJAX handler.
+ *
+ *  this is really a direct bridge to reqwest, which is the
+ *  httplib used by the application.
+ *
+ *  @param {Object} opts The options for Reqwest.
+ *
+ */
+export function xhr(opts) {
+    return Request(opts);
+}
+
+
+export function transformProperties(transforms, properties) {
+    const new_properties = Object.assign({}, properties);
+
+    for(const prop in transforms) {
+        let value = properties[prop];
+        switch(transforms[prop]) {
+            case 'string':
+                value = '' + value;
+                break
+            case 'number':
+                value = parseFloat(value);
+                break;
+            default:
+                // do nothing on default.
+        }
+        new_properties[prop] = value;
+    }
+
+    return new_properties;
+}
+
+/* Convert the data type of feature properties.
+ *
+ * @param transforms Object of transforms to apply.
+ * @param features   Array of GeoJSON features.
+ *
+ * @return The array of GeoJSON features.
+ */
+export function transformFeatures(transforms, features) {
+    if(typeof(transforms) !== 'object') {
+        return features;
+    }
+
+    for(const feature of features) {
+        feature.properties = transformProperties(transforms, feature.properties);
+    }
+
+    return features;
+}
+
+/** Calculate the length of a GET query.
+ *
+ *  @param data An object of KVP.
+ *
+ * @returns An integer.
+ */
+export function requEstimator(data) {
+    return formatUrlParameters(data).length;
+}
+
+/** Reproject a set of GeoJSON features.
+ *
+ *  @param features An array of GeoJSON features.
+ *  @param srcProj  The source projection.
+ *  @param destProj The destination projection.
+ *
+ *  @returns an Array of features in destProj.
+ */
+export function projectFeatures(features, srcProj, destProj) {
+    // fake the array of features as a feature collection.
+    const new_features = GEOJSON_FORMAT.readFeatures({
+        type: 'FeatureCollection',
+        features: features
+    }, {
+        dataProjection: srcProj,
+        featureProjection: destProj
+    });
+
+    // the output will be a feature collection,
+    //  the ".features" ensures an array is returned.
+    return (GEOJSON_FORMAT.writeFeaturesObject(new_features)).features;
 }

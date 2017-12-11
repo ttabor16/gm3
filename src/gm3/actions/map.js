@@ -28,10 +28,11 @@
 
 import { MAP } from '../actionTypes';
 
-export function move(center, resolution) {
+export function move(center, zoom) {
     return {
         type: MAP.MOVE,
-        center, resolution
+        center,
+        zoom,
     }
 }
 
@@ -42,10 +43,10 @@ export function cursor(coords) {
     }
 }
 
-export function changeTool(tool) {
+export function changeTool(tool, src = null) {
     return {
         type: MAP.CHANGE_TOOL,
-        tool
+        tool, src
     }
 }
 
@@ -80,13 +81,14 @@ export function queryProgress(queryId) {
     };
 }
 
-export function resultsForQuery(queryId, layerName, failed, features) {
+export function resultsForQuery(queryId, layerName, failed, features, messageText = '') {
     return {
         type: MAP.QUERY_RESULTS,
         id: queryId,
         layer: layerName,
         failed,
-        features
+        features,
+        messageText,
     }
 }
 
@@ -130,5 +132,57 @@ export function removeQueryResults(queryId, filter) {
 export function clearSelectionFeatures() {
     return {
         type: MAP.CLEAR_SELECTION_FEATURES
+    };
+}
+
+export function updateSketchGeometry(geometry) {
+    return {
+        type: MAP.SKETCH_GEOMETRY,
+        geometry
+    };
+}
+
+/* Add a filter to a results set.
+ */
+export function addFilter(queryId, filterDefn) {
+    return {
+        type: MAP.ADD_FILTER,
+        id: queryId,
+        filter: filterDefn
+    };
+}
+
+/* Remove a filter from a results set.
+ */
+export function removeFilter(queryId, field) {
+    return {
+        type: MAP.REMOVE_FILTER,
+        id: queryId,
+        field
+    }
+}
+
+/* Set the view of the map.
+ *
+ * @param view {Object} An object containing center and zoom or resolution.
+ *
+ * @return An action definition.
+ */
+export function setView(view) {
+    return Object.assign({
+        type: MAP.MOVE
+    }, view);
+}
+
+/* Set a buffer for selection features.
+ *
+ * @param meters {Float} Distance in meters to buffer the features.
+ *
+ * @return action definition
+ */
+export function setSelectionBuffer(meters) {
+    return {
+        type: MAP.BUFFER_SELECTION_FEATURES,
+        meters
     };
 }

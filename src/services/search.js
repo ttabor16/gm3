@@ -42,18 +42,44 @@ function SearchService(Application, options) {
     /** Name will be set by the application when the service is registered. */
     this.name = '';
 
-    /** Limit the number of selection tools available 
+    /** Limit the number of selection tools available
      *  No geo selection tools are used for search
      * */
-    this.tools = {}; 
+    this.tools = {};
 
     /** User input fields */
     this.fields = options.fields ? options.fields : [
-        {type: 'text', label: 'Name', name: 'keyword'}
     ];
 
-    /** Define the highlight layer */
-    this.highlightPath = options.highlightPath ? options.highlightPath : 'highlight/highlight';
+    /** Define the layer(s) to be searched. */
+    this.searchLayers = options.searchLayers ? options.searchLayers : [];
+
+    /** Allow the user to programmatically change which
+     *  layers are searched.
+     */
+    this.getSearchLayers = options.getSearchLayers ? options.getSearchLayers : function(searchLayers, fields) {
+        return searchLayers;
+    };
+
+    /** Field transfomation function. */
+    this.prepareFields = options.prepareFields ? options.prepareFields : function(fields) {
+        // reformat the fields for the query engine,
+        //  "*stuff*" will do a case-ignored "contains" query.
+        var query = [];
+        for(var i = 0, ii = fields.length; i < ii; i++) {
+            if(fields[i].value !== '' && fields[i].value !== undefined) {
+                query.push({
+                    comparitor: 'ilike',
+                    name: fields[i].name,
+                    value: '*' + fields[i].value + '*'
+                });
+            }
+        }
+        return query;
+    };
+
+    /** Define the results layer */
+    this.resultsPath = options.resultsPath ? options.resultsPath : 'results/results';
 
     /** This function is called everytime a search is executed.
      *
@@ -64,21 +90,20 @@ function SearchService(Application, options) {
      *                   given to the service.
      */
     this.query = function(selection, fields) {
-        // reformat the fields for the query engine,
-        //  "*stuff*" will do a case-ignored "contains" query.
-        var fields = [
-            {comparitor: 'ilike', name: 'OWNER_NAME', value: '*' + fields[0].value + '*'}
-        ];
-
         // This will dispatch the query.
         // Application.dispatchQuery is used to query a set of map-sources
         //  as they are defined in the mapbook.  To perform other types of queries
         //  it would be necessary to put that code here and then manually tell
         //  the application when the query has finished, at which point resultsAsHtml()
         //  would be called by the service tab.
-        Application.dispatchQuery(this.name, selection, fields, ['vector-parcels/ms:parcels']);
+        Application.dispatchQuery(
+            this.name,
+            selection,
+            this.prepareFields(fields),
+            this.getSearchLayers(this.searchLayers, fields),
+            this.template
+        );
     }
-
 
     /** resultsAsHtml is the function used to populate the Service Tab
      *                after the service has finished querying.
@@ -92,10 +117,10 @@ function SearchService(Application, options) {
             var path = query.layers[i];
 
             // check to see that the layer has results and features were returned.
-            if(query.results[path] && !query.results[path].failed) {
+            if(query.results[path]) {
                 // renderFeaturesWithTemplate will take the query, the layer specified by path,
                 //  and the specified template and render it. This example uses an inline
-                //  template from the mapbook. 
+                //  template from the mapbook.
                 // The layer in the mapbook should have a <template name='identify'>
                 //  child which will be rendered here..
                 html += Application.renderFeaturesWithTemplate(query, path, this.template);
@@ -113,7 +138,7 @@ function SearchService(Application, options) {
 
     /** renderQueryResults is the function called to let the service
      *                     run basically any code it needs to execute after
-     *                     the query has been set to finish.  
+     *                     the query has been set to finish.
      *
      *  WARNING! This will be called multiple times. It is best to ensure
      *           there is some sort of flag to prevent multiple renderings.
@@ -133,18 +158,20 @@ function SearchService(Application, options) {
         var all_features = [];
         for(var i = 0, ii = query.layers.length; i < ii; i++) {
             var path = query.layers[i];
-            if(query.results[path] && !query.results[path].failed) {
+            if(query.results[path]) {
                 all_features = all_features.concat(query.results[path]);
             }
         }
 
         // when features have been returned, clear out the old features
-        //  and put the new features on the highlight layer.
+        //  and put the new features on the results layer.
         if(all_features.length > 0) {
-            Application.clearFeatures(this.highlightPath);
-            Application.addFeatures(this.highlightPath, all_features);
+            Application.clearFeatures(this.resultsPath);
+            Application.addFeatures(this.resultsPath, all_features);
         }
     }
 
-                        
+
 }
+
+if(typeof(module) !== 'undefined') { module.exports = SearchService; }

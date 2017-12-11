@@ -24,8 +24,8 @@
 
 /** "index" module that ties together all the
  *  submodules of geomoose.  This is what ultimately defines
- *  the public API of GeoMoose. 
- * 
+ *  the public API of GeoMoose.
+ *
  */
 
 import 'babel-polyfill';
@@ -43,11 +43,24 @@ import VisibleLayers from './gm3/components/visibleLayers';
 import Grid from './gm3/components/grid';
 import Version from './gm3/components/version';
 import CoordinateDisplay from './gm3/components/coordinates';
+import MeasureTool from './gm3/components/measure';
+import PrintModal from './gm3/components/print/printModal';
+import JumpToExtent from './gm3/components/jumpToExtent';
 
 import LocalStorageTracker from './gm3/trackers/localStorage';
+import HashTracker from './gm3/trackers/hash';
 
 import * as util from './gm3/util';
+import * as jsts from './gm3/jsts';
 
+import proj4 from 'proj4';
+
+import proj from 'ol/proj';
+
+// setup some real proj4 action.
+proj.setProj4(proj4);
+
+util.configureProjections(proj4);
 
 var components = {
     Catalog: Catalog,
@@ -58,16 +71,21 @@ var components = {
     VisibleLayers: VisibleLayers,
     Grid: Grid,
     Version: Version,
-    CoordinateDisplay: CoordinateDisplay
+    CoordinateDisplay: CoordinateDisplay,
+    MeasureTool: MeasureTool,
+    PrintModal: PrintModal,
+    JumpToExtent: JumpToExtent
 };
 
 var trackers = {
-    LocalStorageTracker
+    LocalStorageTracker,
+    HashTracker,
 };
 
 export {
     Application,
     components,
     trackers,
-    util
+    util,
+    jsts,
 };
